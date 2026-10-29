@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+*.original
+.env
+.env.*
+!.env.example
+*.zip
+*.rar
+ALI_VPN_PANEL_DATA/panel-data.json
+ALI_VPN_PANEL_DATA/panel-data.json.bak
+ALI_VPN_PANEL_DATA/panel-data.corrupt-*.json

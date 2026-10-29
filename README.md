@@ -1,28 +1,46 @@
-# ALI VPN Panel — Vercel deployment
+# ALI VPN PANEL — Vercel-ready package
 
-**Current state:** this repository contains the upload helper, not the full application source yet. The clean source bundle is available in the ChatGPT conversation as `ALI-VPN-Panel-Vercel-Ready.zip`.
+پنل راست‌چین مدیریت API ایران‌سیستم با رابط کاربری واکنش‌گرا. این نسخه علاوه بر اجرای محلی، برای Python Runtime و WSGI در Vercel آماده شده است.
 
-## Publish the clean source to this repository
+## استقرار روی Vercel
 
-1. Download `ALI-VPN-Panel-Vercel-Ready.zip` from the ChatGPT conversation.
-2. Download [Push-ALI-VPN-Panel-To-GitHub.ps1](https://raw.githubusercontent.com/ALIZZZALI/ALI-VPN-Panel-Vercel/main/Push-ALI-VPN-Panel-To-GitHub.ps1).
-3. Put both files in the same folder on your Windows PC.
-4. Open PowerShell in that folder and run:
-   ```powershell
-   powershell -ExecutionPolicy Bypass -File .\Push-ALI-VPN-Panel-To-GitHub.ps1
-   ```
-5. Follow the prompts. Git may ask you to authenticate with GitHub. The script checks the ZIP contents and refuses to upload obvious local data, real `.env` files, or key/database files.
+1. سورس این مخزن اکنون مستقیماً در ریشهٔ مخزن قرار دارد. هنگام Import در Vercel، مقدار Root Directory را خالی/ریشه نگه دار؛ پوشهٔ `ALI-VPN-Panel` دیگر لازم نیست.
+2. در Vercel پروژه را Import کن. Runtime از WSGI callable موجود در `app.py` تشخیص داده می‌شود؛ به پکیج Python ثالث نیاز نیست.
+3. **قبل از راه‌اندازی پنل، یک Upstash Redis/KV را به پروژه وصل کن:** در Dashboard پروژه، بخش **Storage** را باز کن و Upstash Redis را نصب/متصل کن. اتصال باید متغیرهای `KV_REST_API_URL` و `KV_REST_API_TOKEN` (یا معادل‌های `UPSTASH_REDIS_REST_URL` و `UPSTASH_REDIS_REST_TOKEN`) را به پروژه اضافه کند.
+4. در `Settings → Environment Variables` یک متغیر محرمانه به نام `ALI_VPN_SETUP_TOKEN` بساز و یک مقدار تصادفیِ طولانی (حداقل ۳۲ کاراکتر؛ ترجیحاً ۳۲ بایت تصادفی یا بیشتر) برایش قرار بده. این مقدار فقط برای راه‌اندازی اولیه است؛ آن را در کد، HTML، Git یا پیام عمومی قرار نده.
+5. پروژه را دوباره Deploy کن تا هم متغیرهای Storage و هم توکن راه‌اندازی به Function برسند.
+6. دامنهٔ سایت را باز کن. در صفحهٔ راه‌اندازی، `ALI_VPN_SETUP_TOKEN` را وارد و یک رمز مدیر اختصاصی حداقل ۱۲ کاراکتری بساز. رمز پیش‌فرض یا حساب مدیر از پیش آماده داخل ZIP وجود ندارد. پس از ایجاد مدیر، مسیر راه‌اندازی دوباره بسته می‌شود؛ می‌توانی متغیر `ALI_VPN_SETUP_TOKEN` را از تنظیمات Vercel حذف کنی.
+7. بعد از ورود، از «تنظیمات پنل» کلیدهای API مستقیم و تانل خودت را وارد و «تست اتصال» را اجرا کن.
 
-The script copies the source from the ZIP into a fresh clone of this repository and pushes a commit to `main`. It does not set API keys or an administrator password.
+### متغیرهای محیطی
 
-## Vercel configuration after source is published
+- `KV_REST_API_URL`: نشانی REST ذخیره‌ساز Upstash؛ توسط اتصال Storage در Vercel ارائه می‌شود.
+- `KV_REST_API_TOKEN`: توکن خصوصی نوشتن/خواندن Upstash؛ فقط در Environment Variables سرور نگه دار، هرگز در HTML، GitHub یا پیام عمومی قرار نده.
+- `ALI_VPN_SETUP_TOKEN`: توکن محرمانهٔ یک‌بارمصرف برای ساخت اولین مدیر؛ پس از راه‌اندازی می‌توان آن را حذف کرد.
+- `ALI_VPN_KV_PREFIX` (اختیاری): پیشوند namespace کلیدهای ذخیره‌ساز؛ مقدار پیش‌فرض `ali-vpn-panel` است.
 
-- Connect an Upstash Redis REST database to the Vercel project.
-- Configure the Redis REST URL/token as environment variables.
-- Set `ALI_VPN_SETUP_TOKEN` to a random private value of at least 32 characters before the first deployment.
-- Complete initial administrator setup, then remove `ALI_VPN_SETUP_TOKEN`.
-- Enter your provider API keys inside the panel settings after deployment.
+اگر Redis/KV متصل نشده باشد، پنل از ذخیرهٔ پایدار یا راه‌اندازی مدیر جلوگیری می‌کند و پیام راهنما نشان می‌دهد؛ برای جلوگیری از گم‌شدن API key یا تنظیمات، حالت بی‌ذخیره‌ساز به‌صورت پنهانی فعال نمی‌شود.
 
-## Security note
+## اطلاعات اولیه و حریم خصوصی
 
-This repository is currently **public**. A VPN management panel is usually better kept in a private repository. Never commit API keys, `.env`, session files, database dumps, or backups. The application’s live Vercel/Upstash/provider integration still needs verification in your own accounts.
+- این بسته فاقد API Key واقعی، رمز مدیر اولیه، cookie/session، فایل `panel-data.json` و پشتیبان داده‌های کاربر است.
+- کلیدهای API فقط پس از ورود مدیر و از داخل تنظیمات ثبت می‌شوند؛ در source یا repository قرارشان نده.
+- تنظیمات پنل از طریق Upstash Redis و سمت سرور نگه‌داری می‌شوند. روی محیط Vercel، فایل‌سیستم تابع برای ذخیرهٔ پایدار استفاده نمی‌شود.
+- از مخزن GitHub خصوصی استفاده کن؛ `.vercelignore` و `vercel.json` پوشهٔ دادهٔ محلی، تست‌ها، پشتیبان‌ها و اسکریپت‌های اجرای ویندوز را از bundle حذف می‌کنند.
+- کلیدهای API به‌صورت متن در دادهٔ برنامه نگه‌داری می‌شوند (نه به‌صورت رمزگذاریِ سطح برنامه). دسترسی به پروژهٔ Vercel و Upstash را محدود کن و کلید Storage را افشا نکن.
+
+## اجرای محلی در Windows
+
+برای اجرای همان پروژه به‌صورت محلی، Python 3.10+ نصب باشد و `run.bat` را اجرا کن. حالت محلی همچنان از `ALI_VPN_PANEL_DATA/panel-data.json` استفاده می‌کند و رمز اولیه را در پنجرهٔ اجرا نمایش می‌دهد. این رفتار فقط برای اجرای محلی است؛ در Vercel رمز اولیه‌ای تولید یا نمایش داده نمی‌شود.
+
+## ویژگی‌ها و محدودیت‌های Runtime سرورلس
+
+امکانات موجود پنل از جمله داشبورد، سرویس‌ها، ابزار API، مالکان، گزارش‌ها، رمز مدیر و تنظیمات حساب‌ها از همان مسیرهای `/api/*` استفاده می‌کنند. نشست‌ها در KV نگه‌داری می‌شوند تا بین instanceها باقی بمانند. برای جلوگیری از نگه‌داری پس‌زمینهٔ غیرقابل‌اعتماد، پشتیبان کامل در Vercel در همان invocation اجرا می‌شود؛ خروجی‌های بیش از ۴ مگابایت برای ذخیرهٔ موقت رد می‌شوند و محدودیت زمان Function هم برقرار است. برای backupهای بسیار بزرگ، از خروجی‌های کوچک‌تر یا ابزار/ذخیره‌ساز مناسب فایل استفاده کن.
+
+## آزمون‌های محلی
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+این آزمون‌ها از API شبیه‌سازی‌شده استفاده می‌کنند؛ موفقیت آن‌ها اعتبار API Key یا دسترسی زنده به حساب ایران‌سیستم را ثابت نمی‌کند.

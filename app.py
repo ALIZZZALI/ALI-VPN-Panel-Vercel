@@ -195,7 +195,9 @@ def _write_store(data: dict[str, Any]) -> None:
     if IS_VERCEL:
         if not storage_is_configured():
             raise RuntimeError("ذخیره‌ساز پایدار تنظیم نشده است؛ اتصال Upstash Redis را به پروژهٔ Vercel اضافه کن.")
-        _kv_command(["SET", _state_key(), encoded])
+        result = _kv_command(["SET", _state_key(), encoded])
+        if result != "OK":
+            raise RuntimeError("ذخیره‌سازی در Redis تأیید نشد؛ تنظیمات Upstash را بررسی کن و دوباره تلاش کن.")
         return
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     temp = DATA_DIR / f".{DATA_FILE.name}.{uuid.uuid4().hex}.tmp"
@@ -265,8 +267,14 @@ def load_store() -> tuple[dict[str, Any], str | None]:
             data = default_data()
             fresh = True
 
+    # Detect this on the persisted record BEFORE merging defaults. default_data()
+    # generates a random version, so checking the merged base would hide a legacy
+    # record with no session_version and could invalidate sign-in on the next request.
+    session_version_missing = not str(data.get("session_version") or "").strip()
     base = default_data()
     base.update(data)
+    if session_version_missing:
+        base["session_version"] = uuid.uuid4().hex
     if not isinstance(base.get("apis"), dict):
         base["apis"] = {}
     if not isinstance(base.get("owners"), dict):
@@ -310,7 +318,7 @@ def load_store() -> tuple[dict[str, Any], str | None]:
             base["auth"] = {"salt": salt, "hash": digest, "updated_at": now_iso()}
     # Vercel reads the shared state at request time; do not rewrite a healthy
     # remote record on every refresh. Only seed Redis when it was empty.
-    if storage_is_configured() and (not IS_VERCEL or fresh):
+    if storage_is_configured() and (not IS_VERCEL or fresh or session_version_missing):
         _write_store(base)
     return base, generated_password
 

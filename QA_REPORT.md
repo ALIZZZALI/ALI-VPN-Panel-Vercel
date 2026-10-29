@@ -15,11 +15,13 @@
 
 - `python -m py_compile app.py`: passed.
 - `node --check` on the embedded JavaScript extracted from `static/index.html`: passed.
-- `python -m unittest discover -s tests -v`: **32 tests passed** after adding first-run token checks (no real API calls made by tests).
+- `python -m unittest discover -s tests -v`: **34 tests passed** after adding legacy-session migration and API-key persistence regression checks (no real API calls made by tests).
 - WSGI smoke test: `/` responds with the app HTML, `/api/auth/check` reports setup state, and mocked first-admin setup writes an empty API-key state and issues a Secure/HttpOnly/SameSite cookie.
 - WSGI test suite covers: first-run setup, rejection of invalid setup tokens, competing setup attempts, and short/mismatched passwords, missing KV guidance, cookie/session persistence through a mocked Redis REST implementation, cross-instance state refresh, and shared login-rate-limit behavior.
 - `index.html` and `static/index.html` are byte-identical.
 - The deployment ZIP was scanned for the previously disclosed test key values; neither appears in the project source.
+
+- Additional regression tests verify migration of legacy Redis records missing `session_version` and API-key persistence across a simulated new serverless request.
 
 ## Not verified live
 

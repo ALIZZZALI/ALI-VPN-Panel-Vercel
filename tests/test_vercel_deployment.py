@@ -196,5 +196,51 @@ class VercelDeploymentTests(unittest.TestCase):
         self.assertFalse(panel._remote_login_blocked(ip))
 
 
+
+    def test_legacy_redis_state_migrates_session_version_once(self):
+        data = panel.default_data()
+        data.pop("session_version", None)
+        salt, digest = panel.hash_password("valid-test-password-123")
+        data["auth"] = {"salt": salt, "hash": digest, "updated_at": "2026-10-29T00:00:00+00:00"}
+        self.redis[panel._state_key()] = json.dumps(data)
+
+        first, _ = panel.load_store()
+        self.assertTrue(first.get("session_version"))
+        persisted = json.loads(self.redis[panel._state_key()])
+        self.assertEqual(persisted["session_version"], first["session_version"])
+
+        second, _ = panel.load_store()
+        self.assertEqual(second["session_version"], first["session_version"])
+
+    def test_api_key_persists_in_redis_and_survives_a_new_request(self):
+        data = panel.default_data()
+        salt, digest = panel.hash_password("valid-test-password-123")
+        data["auth"] = {"salt": salt, "hash": digest, "updated_at": "2026-10-29T00:00:00+00:00"}
+        self.redis[panel._state_key()] = json.dumps(data)
+        panel.STORE = copy.deepcopy(data)
+        sid = "test-session-for-config"
+        self.redis[panel._session_key(sid)] = data["session_version"]
+        cookie = f"ali_vpn_session={sid}"
+
+        response, body = self.request("/api/config", "POST", {
+            "mode": "direct",
+            "api_key": "test-server-side-api-key-123",
+            "api_url": panel.API_URLS["direct"],
+        }, cookie=cookie, origin="https://panel-test.vercel.app")
+        self.assertEqual(response["status"], "200 OK", body.decode("utf-8"))
+        self.assertTrue(json.loads(body)["ok"])
+
+        persisted = json.loads(self.redis[panel._state_key()])
+        self.assertEqual(persisted["apis"]["direct"]["api_key"], "test-server-side-api-key-123")
+
+        # Simulate another serverless invocation with a fresh in-memory STORE.
+        panel.STORE = panel.default_data()
+        response, body = self.request("/api/config", cookie=cookie)
+        self.assertEqual(response["status"], "200 OK")
+        config = json.loads(body)
+        self.assertTrue(config["configured"])
+        self.assertEqual(config["masked_key"][-4:], "-123")
+        self.assertNotIn("test-server-side-api-key-123", body.decode("utf-8"))
+
 if __name__ == "__main__":
     unittest.main()
