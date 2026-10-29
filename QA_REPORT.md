@@ -15,13 +15,20 @@
 
 - `python -m py_compile app.py`: passed.
 - `node --check` on the embedded JavaScript extracted from `static/index.html`: passed.
-- `python -m unittest discover -s tests -v`: **34 tests passed** after adding legacy-session migration and API-key persistence regression checks (no real API calls made by tests).
+- `python -m unittest discover -s tests -v`: **38 tests passed** after cold-instance authentication, setup-conflict, and Redis logout regression checks (no real API calls made by tests).
 - WSGI smoke test: `/` responds with the app HTML, `/api/auth/check` reports setup state, and mocked first-admin setup writes an empty API-key state and issues a Secure/HttpOnly/SameSite cookie.
 - WSGI test suite covers: first-run setup, rejection of invalid setup tokens, competing setup attempts, and short/mismatched passwords, missing KV guidance, cookie/session persistence through a mocked Redis REST implementation, cross-instance state refresh, and shared login-rate-limit behavior.
 - `index.html` and `static/index.html` are byte-identical.
 - The deployment ZIP was scanned for the previously disclosed test key values; neither appears in the project source.
 
 - Additional regression tests verify migration of legacy Redis records missing `session_version` and API-key persistence across a simulated new serverless request.
+
+## Authentication / session review
+
+- Root cause: this module exported both a `handler` subclass and a WSGI callable named `app`. The Redis refresh existed only in `app()`, but Vercel can call the `BaseHTTPRequestHandler` entrypoint directly. A cold instance then began with an empty admin record and random session version, so `/api/auth/check` could show setup while `/api/setup` re-read Redis and reported that an admin already existed. The same stale state could reject the session on the next protected request.
+- Redis refresh now runs in the request handler before each API GET/POST, so direct-handler and WSGI execution use the same persisted state.
+- Setup conflicts switch the UI to login after re-checking state; login/setup verify that the session works on a subsequent request; logout checks server success before switching the UI.
+- Added tests for cold-instance admin/session restore, existing-admin setup conflict, login persistence, and Redis logout revocation.
 
 ## Not verified live
 

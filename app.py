@@ -1334,7 +1334,7 @@ def parse_json_body(handler: BaseHTTPRequestHandler, max_bytes: int = 1_000_000)
     return value
 
 
-class Handler(BaseHTTPRequestHandler):
+class handler(BaseHTTPRequestHandler):
     server_version = "ALIVPNPanel/1.0"
     sys_version = ""
 
@@ -1437,10 +1437,41 @@ class Handler(BaseHTTPRequestHandler):
         except Exception:
             return False
 
+    def refresh_shared_store(self) -> bool:
+        """Reload durable state before every API request on Vercel.
+
+        Vercel may instantiate the BaseHTTPRequestHandler entrypoint directly,
+        bypassing the WSGI adapter. Refreshing only in app() left those invocations
+        with an empty admin record and a random session version.
+        """
+        if not IS_VERCEL or not storage_is_configured():
+            return True
+        try:
+            latest_store, _ = load_store()
+            with LOCK:
+                STORE.clear()
+                STORE.update(latest_store)
+            return True
+        except Exception as exc:
+            message = str(exc) if isinstance(exc, (RuntimeError, ValueError)) else "خواندن اطلاعات پایدار پنل ناموفق بود؛ تنظیمات Upstash را بررسی کن."
+            self.send_json({
+                "ok": False,
+                "authenticated": False,
+                "setup_required": True,
+                "setup_allowed": False,
+                "storage_configured": storage_is_configured(),
+                "error": message,
+                "setup_message": message,
+            }, 503)
+            return False
+
     def do_GET(self) -> None:
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
         query = urllib.parse.parse_qs(parsed.query)
+        # Static HTML can be served without storage; all API GETs need fresh shared state.
+        if path.startswith("/api/") and not self.refresh_shared_store():
+            return
         if path in ("/", "/index.html"):
             self.send_html(); return
         if path == "/favicon.ico":
@@ -1547,6 +1578,8 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
+        if path.startswith("/api/") and not self.refresh_shared_store():
+            return
         if path == "/api/login":
             self.handle_login(); return
         if path == "/api/setup":
@@ -1962,6 +1995,11 @@ class Handler(BaseHTTPRequestHandler):
                         "local_warning": local_warning})
 
 
+# Lowercase class name is the Vercel Python Function entrypoint.
+# Keep the alias for the local Windows server and WSGI adapter.
+Handler = handler
+
+
 class _WSGIRequest:
     """Minimal WSGI request facade; avoids a framework dependency on Vercel."""
     def __init__(self, environ: dict[str, Any]):
@@ -2034,16 +2072,8 @@ class _VercelHandler(Handler):
 
 
 def app(environ: dict[str, Any], start_response: Any) -> list[bytes]:
-    """Vercel WSGI entry point. Existing local HTTP server remains unchanged."""
-    global STORE
+    """Optional WSGI adapter; handler methods refresh shared state themselves."""
     try:
-        # Warm serverless instances can outlive other requests. Refresh shared
-        # settings from Redis so auth changes and API keys are not instance-local.
-        if IS_VERCEL and storage_is_configured():
-            latest_store, _ = load_store()
-            with LOCK:
-                STORE.clear()
-                STORE.update(latest_store)
         wsgi_request = _WSGIRequest(environ)
         handler = _VercelHandler(wsgi_request)
         method = wsgi_request.method

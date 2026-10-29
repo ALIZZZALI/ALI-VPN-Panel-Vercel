@@ -116,9 +116,12 @@ class VercelDeploymentTests(unittest.TestCase):
         self.assertIn("HttpOnly", cookie)
         self.assertIn("SameSite=Strict", cookie)
         cookie_pair = cookie.split(";", 1)[0]
+        panel.STORE = panel.default_data()
+        panel.STORE["auth"] = {}
         response, body = self.request("/api/auth/check", cookie=cookie_pair)
         self.assertEqual(response["status"], "200 OK")
         self.assertTrue(json.loads(body)["authenticated"])
+        self.assertFalse(json.loads(body)["setup_required"])
         state = json.loads(self.redis[f"{panel.KV_KEY_PREFIX}:state"])
         self.assertEqual(state["apis"]["direct"]["api_key"], "")
         self.assertEqual(state["apis"]["tunnel"]["api_key"], "")
@@ -241,6 +244,84 @@ class VercelDeploymentTests(unittest.TestCase):
         self.assertTrue(config["configured"])
         self.assertEqual(config["masked_key"][-4:], "-123")
         self.assertNotIn("test-server-side-api-key-123", body.decode("utf-8"))
+    def test_cold_instance_reads_existing_admin_and_session_from_redis(self):
+        data = panel.default_data()
+        salt, digest = panel.hash_password("valid-test-password-123")
+        data["auth"] = {"salt": salt, "hash": digest, "updated_at": "2026-10-29T00:00:00+00:00"}
+        sid = "existing-session-on-new-instance"
+        self.redis[panel._state_key()] = json.dumps(data)
+        self.redis[panel._session_key(sid)] = data["session_version"]
+        panel.STORE = panel.default_data()
+        panel.STORE["auth"] = {}
+
+        response, body = self.request("/api/auth/check", cookie=f"ali_vpn_session={sid}")
+        value = json.loads(body)
+        self.assertEqual(response["status"], "200 OK")
+        self.assertTrue(value["authenticated"])
+        self.assertFalse(value["setup_required"])
+
+    def test_setup_submission_after_admin_exists_returns_conflict_not_false_success(self):
+        data = panel.default_data()
+        salt, digest = panel.hash_password("valid-test-password-123")
+        data["auth"] = {"salt": salt, "hash": digest, "updated_at": "2026-10-29T00:00:00+00:00"}
+        self.redis[panel._state_key()] = json.dumps(data)
+        panel.STORE = panel.default_data()
+        panel.STORE["auth"] = {}
+
+        response, body = self.request("/api/setup", "POST", {
+            "password": "another-test-password-123",
+            "confirm_password": "another-test-password-123",
+            "setup_token": "test-private-setup-token-long-123456",
+        }, origin="https://panel-test.vercel.app")
+        self.assertEqual(response["status"], "409 Conflict")
+        self.assertIn("مدیر قبلاً راه‌اندازی شده", json.loads(body)["error"])
+        saved = json.loads(self.redis[panel._state_key()])
+        self.assertEqual(saved["auth"]["hash"], digest)
+
+    def test_logout_revokes_redis_session_and_clears_cookie(self):
+        data = panel.default_data()
+        salt, digest = panel.hash_password("valid-test-password-123")
+        data["auth"] = {"salt": salt, "hash": digest, "updated_at": "2026-10-29T00:00:00+00:00"}
+        sid = "session-to-logout"
+        self.redis[panel._state_key()] = json.dumps(data)
+        self.redis[panel._session_key(sid)] = data["session_version"]
+        panel.STORE = panel.default_data()
+        panel.STORE["auth"] = {}
+
+        response, body = self.request("/api/logout", "POST", {}, cookie=f"ali_vpn_session={sid}", origin="https://panel-test.vercel.app")
+        self.assertEqual(response["status"], "200 OK")
+        self.assertTrue(json.loads(body)["ok"])
+        cookie = next(v for k, v in response["headers"] if k.lower() == "set-cookie")
+        self.assertIn("Max-Age=0", cookie)
+        self.assertNotIn(panel._session_key(sid), self.redis)
+
+        response, body = self.request("/api/auth/check", cookie=f"ali_vpn_session={sid}")
+        self.assertFalse(json.loads(body)["authenticated"])
+        self.assertFalse(json.loads(body)["setup_required"])
+
+    def test_login_on_cold_instance_keeps_session_valid_for_following_request(self):
+        data = panel.default_data()
+        salt, digest = panel.hash_password("valid-test-password-123")
+        data["auth"] = {"salt": salt, "hash": digest, "updated_at": "2026-10-29T00:00:00+00:00"}
+        self.redis[panel._state_key()] = json.dumps(data)
+        panel.STORE = panel.default_data()
+        panel.STORE["auth"] = {}
+
+        response, body = self.request("/api/login", "POST", {
+            "password": "valid-test-password-123"
+        }, origin="https://panel-test.vercel.app")
+        self.assertEqual(response["status"], "200 OK")
+        self.assertTrue(json.loads(body)["ok"])
+        cookie = next(v for k, v in response["headers"] if k.lower() == "set-cookie")
+        cookie_pair = cookie.split(";", 1)[0]
+
+        panel.STORE = panel.default_data()
+        response, body = self.request("/api/preferences", cookie=cookie_pair)
+        self.assertEqual(response["status"], "200 OK", body.decode("utf-8"))
+        self.assertTrue(json.loads(body)["ok"])
+        self.assertIn("preferences", json.loads(body))
+
+
 
 if __name__ == "__main__":
     unittest.main()
