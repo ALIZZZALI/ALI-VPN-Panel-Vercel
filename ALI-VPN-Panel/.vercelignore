@@ -1,0 +1,14 @@
+# Never upload machine-local state, backups, or credentials.
+.env
+.env.*
+!.env.example
+ALI_VPN_PANEL_DATA/**
+tests/**
+run*.bat
+*.zip
+*.rar
+*.bak
+*.corrupt-*.json
+__pycache__/
+*.py[cod]
+.git/

@@ -1,0 +1,9 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "functions": {
+    "app.py": {
+      "maxDuration": 60,
+      "excludeFiles": "{tests/**,ALI_VPN_PANEL_DATA/**,run*.bat,QA_REPORT.md,README.md,*.zip,*.rar,*.bak,*.corrupt-*.json}"
+    }
+  }
+}
